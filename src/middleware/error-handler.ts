@@ -1,16 +1,18 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
+import { z } from "zod";
 import { AppError } from "../errors/app-error.js";
 
-type ErrorResponse = {
+export type ErrorResponse = {
   error: {
     code: string;
     message: string;
+    requestId: string;
     details?: unknown;
   };
 };
 
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
-  next(new AppError(404, "NOT_FOUND", `Route ${req.method} ${req.path} not found`));
+  next(new AppError(404, "NOT_FOUND", "Route not found"));
 };
 
 export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, _next) => {
@@ -20,42 +22,86 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, _nex
   }
 
   const appError = normalizeError(error);
+  const requestId = String(req.id);
+  const message = appError.expose ? appError.message : "An unexpected error occurred";
 
-  req.log[appError.statusCode >= 500 ? "error" : "warn"](
-    { err: error, code: appError.code },
-    appError.message,
-  );
+  res.locals.errorCode = appError.code;
+
+  if (appError.statusCode >= 500) {
+    req.log.error(
+      {
+        event: "http.request.error",
+        err: toError(error),
+        errorCode: appError.code,
+      },
+      "request failed",
+    );
+  }
 
   const body: ErrorResponse = {
     error: {
       code: appError.code,
-      message: appError.message,
+      message,
+      requestId,
     },
   };
 
-  if (appError.details !== undefined) {
+  if (appError.expose && appError.details !== undefined) {
     body.error.details = appError.details;
   }
 
   res.status(appError.statusCode).json(body);
 };
 
-function normalizeError(error: unknown): AppError {
+export function normalizeError(error: unknown): AppError {
   if (error instanceof AppError) {
     return error;
+  }
+
+  if (error instanceof z.ZodError) {
+    return new AppError(400, "VALIDATION_ERROR", "Request validation failed", {
+      details: z.flattenError(error).fieldErrors,
+      cause: error,
+    });
   }
 
   if (isMalformedJsonError(error)) {
     return new AppError(400, "INVALID_JSON", "Request body contains invalid JSON");
   }
 
-  return new AppError(500, "INTERNAL_ERROR", "An unexpected error occurred", undefined, {
+  if (isPayloadTooLargeError(error)) {
+    return new AppError(413, "PAYLOAD_TOO_LARGE", "Request body is too large");
+  }
+
+  return new AppError(500, "INTERNAL_ERROR", "An unexpected error occurred", {
     cause: error,
   });
 }
 
-function isMalformedJsonError(error: unknown): error is SyntaxError & { status: number } {
+function isMalformedJsonError(error: unknown): boolean {
   return (
-    error instanceof SyntaxError && "status" in error && error.status === 400 && "body" in error
+    error instanceof SyntaxError &&
+    "status" in error &&
+    error.status === 400 &&
+    "type" in error &&
+    error.type === "entity.parse.failed"
   );
+}
+
+function isPayloadTooLargeError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "status" in error &&
+    error.status === 413 &&
+    "type" in error &&
+    error.type === "entity.too.large"
+  );
+}
+
+function toError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  return new Error("A non-Error value was thrown", { cause: error });
 }

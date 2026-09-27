@@ -1,68 +1,80 @@
-import { app } from "./app.js";
+import closeWithGrace from "close-with-grace";
+import { app, markShuttingDown } from "./app.js";
 import { env } from "./config/env.js";
-import { closeDb } from "./db/client.js";
+import { closeDb, pingDb } from "./db/client.js";
+import { flushLogger, logger } from "./logging/logger.js";
 
-const server = app.listen(env.PORT, () => {
-  console.log(`Server running on port ${env.PORT}`);
-});
-
-let isShuttingDown = false;
-
-async function shutdown(reason: string, exitCode = 0) {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-
-  console.log(`${reason}. Shutting down...`);
-
-  const forceShutdown = setTimeout(() => {
-    console.error("Graceful shutdown timed out");
-    process.exit(1);
-  }, 10_000);
-  forceShutdown.unref();
-
-  let shutdownFailed = false;
-
-  if (server.listening) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      });
-    } catch (error) {
-      shutdownFailed = true;
-      console.error("Failed to close HTTP server", error);
-    }
-  }
-
+async function start(): Promise<void> {
   try {
-    await closeDb();
+    await pingDb();
   } catch (error) {
-    shutdownFailed = true;
-    console.error("Failed to close database pool", error);
+    logger.fatal({ event: "database.startup.failed", err: error }, "database is unavailable");
+    process.exitCode = 1;
+
+    try {
+      await closeDb();
+    } catch (closeError) {
+      logger.error(
+        { event: "shutdown.database.failed", err: closeError },
+        "database failed to close",
+      );
+    } finally {
+      await flushLogger(logger);
+    }
+    return;
   }
 
-  clearTimeout(forceShutdown);
-  process.exitCode = shutdownFailed ? 1 : exitCode;
+  const server = app.listen(env.PORT, () => {
+    logger.info({ event: "server.started", port: env.PORT }, "HTTP server started");
+  });
+
+  closeWithGrace(
+    {
+      delay: env.SHUTDOWN_TIMEOUT_MS,
+      logger,
+      onTimeout: (delay) => {
+        logger.fatal({ event: "shutdown.timeout", timeoutMs: delay }, "shutdown timed out");
+      },
+    },
+    async ({ signal, err }) => {
+      markShuttingDown();
+      logger[err ? "fatal" : "info"](
+        { event: "shutdown.started", signal, err },
+        "server shutting down",
+      );
+
+      const errors: unknown[] = [];
+
+      if (server.listening) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            server.close((error) => (error ? reject(error) : resolve()));
+          });
+        } catch (error) {
+          errors.push(error);
+          logger.error(
+            { event: "shutdown.http.failed", err: error },
+            "HTTP server failed to close",
+          );
+        }
+      }
+
+      try {
+        await closeDb();
+      } catch (error) {
+        errors.push(error);
+        logger.error({ event: "shutdown.database.failed", err: error }, "database failed to close");
+      }
+
+      if (errors.length > 0) {
+        await flushLogger(logger);
+        throw new AggregateError(errors, "Graceful shutdown failed");
+      }
+
+      logger.info({ event: "shutdown.completed" }, "graceful shutdown completed");
+      await flushLogger(logger);
+    },
+  );
 }
 
-server.on("error", (error) => {
-  console.error("HTTP server error", error);
-  void shutdown("HTTP server error", 1);
-});
-
-process.on("SIGTERM", () => {
-  void shutdown("SIGTERM received");
-});
-
-process.on("SIGINT", () => {
-  void shutdown("SIGINT received");
-});
-
-process.on("uncaughtException", (error) => {
-  console.error("Uncaught exception", error);
-  void shutdown("Uncaught exception", 1);
-});
-
-process.on("unhandledRejection", (reason) => {
-  console.error("Unhandled rejection", reason);
-  void shutdown("Unhandled rejection", 1);
-});
+void start();
