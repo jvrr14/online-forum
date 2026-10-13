@@ -24,3 +24,17 @@ export class AppError extends Error {
     this.expose = options.expose ?? statusCode < 500;
   }
 }
+
+export class NotFoundError extends AppError {
+  constructor(message = "Resource not found", code = "NOT_FOUND") {
+    super(404, code, message);
+    this.name = "NotFoundError";
+  }
+}
+
+export class ConflictError extends AppError {
+  constructor(message = "Resource already exists", code = "CONFLICT") {
+    super(409, code, message);
+    this.name = "ConflictError";
+  }
+}

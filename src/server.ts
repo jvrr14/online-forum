@@ -1,8 +1,9 @@
+import "dotenv/config";
 import closeWithGrace from "close-with-grace";
 import { app, markShuttingDown } from "./app.js";
 import { env } from "./config/env.js";
 import { closeDb, pingDb } from "./db/client.js";
-import { flushLogger, logger } from "./logging/logger.js";
+import { flushLogger, logger } from "./lib/logger.js";
 
 async function start(): Promise<void> {
   try {

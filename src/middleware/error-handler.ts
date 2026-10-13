@@ -1,6 +1,6 @@
-import type { ErrorRequestHandler, RequestHandler } from "express";
+import type { ErrorRequestHandler } from "express";
 import { z } from "zod";
-import { AppError } from "../errors/app-error.js";
+import { AppError } from "../lib/errors.js";
 
 export type ErrorResponse = {
   error: {
@@ -9,10 +9,6 @@ export type ErrorResponse = {
     requestId: string;
     details?: unknown;
   };
-};
-
-export const notFoundHandler: RequestHandler = (req, _res, next) => {
-  next(new AppError(404, "NOT_FOUND", "Route not found"));
 };
 
 export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, _next) => {

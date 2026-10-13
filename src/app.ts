@@ -4,8 +4,9 @@ import express, { type Response } from "express";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import { pingDb } from "./db/client.js";
-import { logger } from "./logging/logger.js";
-import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
+import { logger } from "./lib/logger.js";
+import { errorHandler } from "./middleware/error-handler.js";
+import { notFoundHandler } from "./middleware/not-found.js";
 import { router } from "./routes.js";
 
 export const app = express();

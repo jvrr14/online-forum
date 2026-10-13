@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
-import { logger } from "../logging/logger.js";
+import pino from "pino";
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
@@ -15,7 +15,7 @@ const envSchema = z.object({
 const result = envSchema.safeParse(process.env);
 
 if (!result.success) {
-  logger.fatal(
+  pino().fatal(
     {
       event: "config.validation.failed",
       fields: z.flattenError(result.error).fieldErrors,

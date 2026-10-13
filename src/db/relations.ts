@@ -1,9 +1,9 @@
 import { defineRelations } from "drizzle-orm";
-import { categories } from "./category.schema.js";
-import { postCategories } from "./post-category.schema.js";
-import { posts } from "./post.schema.js";
-import { profiles } from "./profile.schema.js";
-import { users } from "./user.schema.js";
+import { categories } from "./schema/category.schema.js";
+import { postCategories } from "./schema/post-category.schema.js";
+import { posts } from "./schema/post.schema.js";
+import { profiles } from "./schema/profile.schema.js";
+import { users } from "./schema/user.schema.js";
 
 export const relations = defineRelations(
   { users, posts, profiles, categories, postCategories },

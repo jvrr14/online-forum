@@ -8,4 +8,3 @@ export { categories } from "./category.schema.js";
 export type { Category, NewCategory } from "./category.schema.js";
 export { postCategories } from "./post-category.schema.js";
 export type { PostCategory, NewPostCategory } from "./post-category.schema.js";
-export { relations } from "./relations.js";

@@ -1,4 +1,5 @@
-import pino, { type LevelWithSilent, type Logger } from "pino";
+import pino, { type Logger } from "pino";
+import { env } from "../config/env.js";
 
 const redactedPaths = [
   "req.headers.authorization",
@@ -8,23 +9,11 @@ const redactedPaths = [
   "JWT_SECRET",
 ];
 
-const logLevels = new Set<LevelWithSilent>([
-  "fatal",
-  "error",
-  "warn",
-  "info",
-  "debug",
-  "trace",
-  "silent",
-]);
-
-const configuredLevel = process.env.LOG_LEVEL as LevelWithSilent | undefined;
-
 export const logger = pino({
-  level: configuredLevel && logLevels.has(configuredLevel) ? configuredLevel : "info",
+  level: env.LOG_LEVEL,
   base: {
-    service: process.env.SERVICE_NAME || "online-forum-api",
-    environment: process.env.NODE_ENV || "development",
+    service: env.SERVICE_NAME,
+    environment: env.NODE_ENV,
   },
   timestamp: pino.stdTimeFunctions.isoTime,
   redact: { paths: redactedPaths, censor: "[Redacted]" },

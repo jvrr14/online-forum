@@ -12,3 +12,6 @@ export const createUserSchema = z.object({
   username: z.string().trim().min(1),
   email: z.email(),
 });
+
+export type UserIdParams = z.output<typeof idParamsSchema>;
+export type CreateUserInput = z.output<typeof createUserSchema>;
