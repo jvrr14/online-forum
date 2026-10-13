@@ -7,7 +7,7 @@ import { pingDb } from "./db/client.js";
 import { logger } from "./lib/logger.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { notFoundHandler } from "./middleware/not-found.js";
-import { router } from "./routes.js";
+import { apiRouter } from "./routes.js";
 
 export const app = express();
 let shuttingDown = false;
@@ -46,7 +46,7 @@ app.use(
     customSuccessObject: (req, res, { responseTime }) => ({
       event: "http.request.completed",
       method: req.method,
-      path: req.url?.split("?")[0],
+      path: req.originalUrl?.split("?")[0],
       statusCode: res.statusCode,
       responseTimeMs: responseTime,
       errorCode: (res as Response).locals.errorCode,
@@ -77,6 +77,6 @@ app.get("/health/ready", async (req, res) => {
   }
 });
 
-app.use("/api/v1", router);
+app.use("/api/v1", apiRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
