@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { env } from "../config/env.js";
+import { relations } from "./schema/index.js";
 
 const pool = new Pool({
   connectionString: env.DATABASE_URL,
@@ -8,7 +9,7 @@ const pool = new Pool({
   query_timeout: 2_000,
 });
 
-export const db = drizzle({ client: pool });
+export const db = drizzle({ client: pool, relations });
 
 export async function pingDb(): Promise<void> {
   await pool.query("SELECT 1");
