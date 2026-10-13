@@ -1,5 +1,7 @@
 import { Router, type Response } from "express";
+import type { Post } from "../../db/schema/index.js";
 import { validate } from "../../middleware/validate.js";
+import { listPostsByUser } from "../posts/posts.service.js";
 import {
   createUserSchema,
   idParamsSchema,
@@ -16,6 +18,14 @@ export const usersRouter = Router();
 usersRouter.get("/", async (_req, res) => {
   res.json(await usersService.listUsers());
 });
+
+usersRouter.get(
+  "/:id/posts",
+  validate(idParamsSchema, "params"),
+  async (_req, res: Response<Post[], { params: UserIdParams }>) => {
+    res.json(await listPostsByUser(res.locals.params.id));
+  },
+);
 
 usersRouter.get(
   "/:id",
