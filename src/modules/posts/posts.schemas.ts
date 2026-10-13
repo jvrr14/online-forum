@@ -1,4 +1,7 @@
 import { z } from "zod";
+import type { PaginationQuery } from "../../lib/request.schemas.js";
+
+export { paginationSchema as listPostsQuerySchema } from "../../lib/request.schemas.js";
 
 const postFieldsSchema = z.object({
   title: z.string().trim().min(1).max(255),
@@ -15,20 +18,29 @@ export const updatePostSchema = postFieldsSchema
   .strict()
   .refine(
     (input) =>
-      input.title !== undefined ||
-      input.content !== undefined ||
-      input.published !== undefined,
+      input.title !== undefined || input.content !== undefined || input.published !== undefined,
     {
       message: "Provide a title, content, or published status to update",
       path: ["title"],
     },
   );
 
-export const listPostsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-  offset: z.coerce.number().int().min(0).default(0),
-});
+const categoryNameSchema = z.string().trim().min(1).max(100);
 
-export type ListPostsQuery = z.output<typeof listPostsQuerySchema>;
+export const addPostCategoriesSchema = z
+  .object({
+    categoryNames: z.array(categoryNameSchema).min(1),
+  })
+  .strict();
+
+export const removePostCategorySchema = z
+  .object({
+    categoryName: categoryNameSchema,
+  })
+  .strict();
+
+export type ListPostsQuery = PaginationQuery;
 export type CreatePostInput = z.output<typeof createPostSchema>;
 export type UpdatePostInput = z.output<typeof updatePostSchema>;
+export type AddPostCategoriesInput = z.output<typeof addPostCategoriesSchema>;
+export type RemovePostCategoryInput = z.output<typeof removePostCategorySchema>;

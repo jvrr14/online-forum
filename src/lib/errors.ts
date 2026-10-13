@@ -38,3 +38,21 @@ export class ConflictError extends AppError {
     this.name = "ConflictError";
   }
 }
+
+export class BadRequestError extends AppError {
+  constructor(
+    message = "Invalid request",
+    code = "VALIDATION_ERROR",
+    options: AppErrorOptions = {},
+  ) {
+    super(400, code, message, options);
+    this.name = "BadRequestError";
+  }
+}
+
+export class InternalServerError extends AppError {
+  constructor(message = "An unexpected error occurred", options: AppErrorOptions = {}) {
+    super(500, "INTERNAL_ERROR", message, options);
+    this.name = "InternalServerError";
+  }
+}

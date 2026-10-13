@@ -1,16 +1,21 @@
-import { desc, DrizzleQueryError, eq, getTableColumns, sql } from "drizzle-orm";
-import { DatabaseError } from "pg";
+import { and, desc, eq, getColumns, inArray, sql } from "drizzle-orm";
 import { db } from "../../db/client.js";
-import { posts, users, type Post, type User } from "../../db/schema/index.js";
-import { NotFoundError } from "../../lib/errors.js";
-import type {
-  CreatePostInput,
-  ListPostsQuery,
-  UpdatePostInput,
-} from "./posts.schemas.js";
+import {
+  categories,
+  postCategories,
+  posts,
+  users,
+  type Category,
+  type Post,
+  type User,
+} from "../../db/schema/index.js";
+import { ConflictError, InternalServerError, NotFoundError } from "../../lib/errors.js";
+import { postgresErrorCode } from "../../lib/database-errors.js";
+import type { CreatePostInput, ListPostsQuery, UpdatePostInput } from "./posts.schemas.js";
 
 export type PostAuthor = Pick<User, "id" | "username">;
 export type PostWithAuthor = Post & { author: PostAuthor };
+export type PostWithCategories = Post & { categories: Category[] };
 export type PostWithFullAuthor = Post & {
   author: PostAuthor & Pick<User, "email">;
 };
@@ -19,17 +24,8 @@ const authorFields = { id: users.id, username: users.username };
 
 const newestFirst = [desc(posts.createdAt), desc(posts.id)] as const;
 
-function isForeignKeyViolation(error: unknown): boolean {
-  const cause = error instanceof DrizzleQueryError ? error.cause : error;
-  return cause instanceof DatabaseError && cause.code === "23503";
-}
-
 async function updateOrThrow(id: number, values: Partial<Post>): Promise<Post> {
-  const [post] = await db
-    .update(posts)
-    .set(values)
-    .where(eq(posts.id, id))
-    .returning();
+  const [post] = await db.update(posts).set(values).where(eq(posts.id, id)).returning();
 
   if (!post) {
     throw new NotFoundError("Post not found", "POST_NOT_FOUND");
@@ -38,12 +34,9 @@ async function updateOrThrow(id: number, values: Partial<Post>): Promise<Post> {
   return post;
 }
 
-export async function listPosts({
-  limit,
-  offset,
-}: ListPostsQuery): Promise<PostWithAuthor[]> {
+export async function listPosts({ limit, offset }: ListPostsQuery): Promise<PostWithAuthor[]> {
   return db
-    .select({ ...getTableColumns(posts), author: authorFields })
+    .select({ ...getColumns(posts), author: authorFields })
     .from(posts)
     .innerJoin(users, eq(posts.authorId, users.id))
     .orderBy(...newestFirst)
@@ -54,7 +47,7 @@ export async function listPosts({
 export async function getPost(id: number): Promise<PostWithFullAuthor> {
   const [post] = await db
     .select({
-      ...getTableColumns(posts),
+      ...getColumns(posts),
       author: { ...authorFields, email: users.email },
     })
     .from(posts)
@@ -82,44 +75,36 @@ export async function listPostsByUser(
     .offset(offset);
 }
 
-export async function createPost(
-  input: CreatePostInput,
-): Promise<PostWithAuthor> {
-  let post: Post | undefined;
-
+export async function createPost(input: CreatePostInput): Promise<PostWithAuthor> {
   try {
-    [post] = await db
-      .insert(posts)
-      .values({
-        title: input.title,
-        content: input.content,
-        authorId: input.authorId,
-      })
-      .returning();
+    return await db.transaction(async (tx) => {
+      const [post] = await tx
+        .insert(posts)
+        .values({ title: input.title, content: input.content, authorId: input.authorId })
+        .returning();
+
+      // The insert's foreign-key lock protects the author until this read finishes.
+      const [author] = await tx
+        .select(authorFields)
+        .from(users)
+        .where(eq(users.id, input.authorId))
+        .limit(1);
+
+      if (!post || !author) {
+        throw new InternalServerError("Post creation returned no record");
+      }
+
+      return { ...post, author };
+    });
   } catch (error) {
-    if (isForeignKeyViolation(error)) {
+    if (postgresErrorCode(error) === "23503") {
       throw new NotFoundError("User not found", "USER_NOT_FOUND");
     }
     throw error;
   }
-
-  const [author] = await db
-    .select(authorFields)
-    .from(users)
-    .where(eq(users.id, input.authorId))
-    .limit(1);
-
-  if (!post || !author) {
-    throw new Error("Post creation returned no record");
-  }
-
-  return { ...post, author };
 }
 
-export async function updatePost(
-  id: number,
-  input: UpdatePostInput,
-): Promise<Post> {
+export async function updatePost(id: number, input: UpdatePostInput): Promise<Post> {
   return updateOrThrow(id, {
     title: input.title,
     content: input.content,
@@ -146,12 +131,93 @@ export async function incrementPostViews(id: number): Promise<Post> {
 }
 
 export async function deletePost(id: number): Promise<void> {
-  const [post] = await db
-    .delete(posts)
-    .where(eq(posts.id, id))
-    .returning({ id: posts.id });
+  const [post] = await db.delete(posts).where(eq(posts.id, id)).returning({ id: posts.id });
 
   if (!post) {
     throw new NotFoundError("Post not found", "POST_NOT_FOUND");
   }
+}
+
+export async function addPostCategories(
+  id: number,
+  categoryNames: string[],
+): Promise<PostWithCategories> {
+  return db.transaction(async (tx) => {
+    // Lock the post while changing its relations and refresh its update timestamp.
+    const [post] = await tx
+      .update(posts)
+      .set({ updatedAt: new Date() })
+      .where(eq(posts.id, id))
+      .returning();
+    if (!post) {
+      throw new NotFoundError("Post not found", "POST_NOT_FOUND");
+    }
+
+    const names = [...new Set(categoryNames)].sort();
+    await tx
+      .insert(categories)
+      .values(names.map((name) => ({ name })))
+      .onConflictDoNothing({ target: categories.name });
+    const linkedCategories = await tx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(inArray(categories.name, names))
+      .for("key share");
+    if (linkedCategories.length !== names.length) {
+      throw new ConflictError(
+        "Categories changed while adding them; retry the request",
+        "CATEGORY_CONFLICT",
+      );
+    }
+    await tx
+      .insert(postCategories)
+      .values(linkedCategories.map((category) => ({ postId: id, categoryId: category.id })))
+      .onConflictDoNothing();
+
+    const result = await tx
+      .select(getColumns(categories))
+      .from(categories)
+      .innerJoin(postCategories, eq(postCategories.categoryId, categories.id))
+      .where(eq(postCategories.postId, id))
+      .orderBy(categories.name);
+    return { ...post, categories: result };
+  });
+}
+
+export async function removePostCategory(
+  id: number,
+  categoryName: string,
+): Promise<PostWithCategories> {
+  return db.transaction(async (tx) => {
+    const [post] = await tx
+      .update(posts)
+      .set({ updatedAt: new Date() })
+      .where(eq(posts.id, id))
+      .returning();
+    if (!post) {
+      throw new NotFoundError("Post not found", "POST_NOT_FOUND");
+    }
+
+    await tx
+      .delete(postCategories)
+      .where(
+        and(
+          eq(postCategories.postId, id),
+          inArray(
+            postCategories.categoryId,
+            tx
+              .select({ id: categories.id })
+              .from(categories)
+              .where(eq(categories.name, categoryName)),
+          ),
+        ),
+      );
+    const result = await tx
+      .select(getColumns(categories))
+      .from(categories)
+      .innerJoin(postCategories, eq(postCategories.categoryId, categories.id))
+      .where(eq(postCategories.postId, id))
+      .orderBy(categories.name);
+    return { ...post, categories: result };
+  });
 }

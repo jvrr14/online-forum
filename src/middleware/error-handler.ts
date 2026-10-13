@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from "express";
 import { z } from "zod";
-import { AppError } from "../lib/errors.js";
+import { postgresErrorCode } from "../lib/database-errors.js";
+import { AppError, ConflictError } from "../lib/errors.js";
 
 export type ErrorResponse = {
   error: {
@@ -52,6 +53,14 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, _nex
 export function normalizeError(error: unknown): AppError {
   if (error instanceof AppError) {
     return error;
+  }
+
+  const databaseCode = postgresErrorCode(error);
+  if (databaseCode === "23505") {
+    return new ConflictError("Resource already exists");
+  }
+  if (databaseCode === "23503") {
+    return new ConflictError("Related resource is missing or still referenced");
   }
 
   if (error instanceof z.ZodError) {

@@ -1,27 +1,45 @@
 import { z } from "zod";
+import { roleEnum } from "../../db/schema/index.js";
+import type { IdParams, PaginationQuery } from "../../lib/request.schemas.js";
 
-export const idParamsSchema = z.object({
-  id: z
-    .string()
-    .regex(/^[1-9]\d*$/, "ID must be a positive integer")
-    .transform(Number)
-    .pipe(z.number().int().positive().max(Number.MAX_SAFE_INTEGER)),
-});
+export {
+  idParamsSchema,
+  paginationSchema as listUsersQuerySchema,
+} from "../../lib/request.schemas.js";
 
 export const createUserSchema = z.object({
-  username: z.string().trim().min(1),
+  username: z.string().trim().min(1).max(100),
   email: z.email(),
+  role: z.enum(roleEnum.enumValues).optional(),
+  bio: z.string().optional(),
 });
 
 export const updateUserSchema = createUserSchema
-  .extend({ username: z.string().trim().min(1).max(100) })
+  .omit({ bio: true })
   .partial()
   .strict()
-  .refine((input) => input.username !== undefined || input.email !== undefined, {
-    message: "Provide a username or email to update",
-    path: ["username"],
+  .refine(
+    (input) =>
+      input.username !== undefined || input.email !== undefined || input.role !== undefined,
+    {
+      message: "Provide a username, email, or role to update",
+      path: ["username"],
+    },
+  );
+
+export const upsertProfileSchema = z
+  .object({
+    bio: z.string().optional(),
+    avatar: z.string().max(500).nullable().optional(),
+  })
+  .strict()
+  .refine((input) => input.bio !== undefined || input.avatar !== undefined, {
+    message: "Provide a bio or avatar to update",
+    path: ["bio"],
   });
 
-export type UserIdParams = z.output<typeof idParamsSchema>;
+export type UserIdParams = IdParams;
+export type ListUsersQuery = PaginationQuery;
 export type CreateUserInput = z.output<typeof createUserSchema>;
 export type UpdateUserInput = z.output<typeof updateUserSchema>;
+export type UpsertProfileInput = z.output<typeof upsertProfileSchema>;
