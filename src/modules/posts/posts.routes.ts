@@ -15,14 +15,19 @@ import {
   type UpdatePostInput,
 } from "./posts.schemas.js";
 import * as postsService from "./posts.service.js";
-import type { PostWithAuthor, PostWithCategories, PostWithFullAuthor } from "./posts.service.js";
+import type {
+  PostListResponse,
+  PostWithAuthor,
+  PostWithCategories,
+  PostWithFullAuthor,
+} from "./posts.service.js";
 
 export const postsRouter = Router();
 
 postsRouter.get(
   "/",
   validate(listPostsQuerySchema, "query"),
-  async (_req, res: Response<PostWithAuthor[], { query: ListPostsQuery }>) => {
+  async (_req, res: Response<PostListResponse, { query: ListPostsQuery }>) => {
     res.json(await postsService.listPosts(res.locals.query));
   },
 );

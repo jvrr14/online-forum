@@ -1,7 +1,27 @@
 import { z } from "zod";
-import type { PaginationQuery } from "../../lib/request.schemas.js";
+import { paginationSchema } from "../../lib/request.schemas.js";
 
-export { paginationSchema as listPostsQuerySchema } from "../../lib/request.schemas.js";
+export const listPostsQuerySchema = paginationSchema
+  .omit({ offset: true })
+  .extend({
+    limit: paginationSchema.shape.limit.default(10),
+    page: z
+      .string()
+      .regex(/^[1-9]\d*$/, "Page must be a positive integer")
+      .transform(Number)
+      .pipe(z.number().int().positive().max(Number.MAX_SAFE_INTEGER))
+      .default(1),
+    search: z.string().optional(),
+    published: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true")
+      .optional(),
+    category: z.string().optional(),
+  })
+  .refine(({ page, limit }) => Number.isSafeInteger((page - 1) * limit), {
+    message: "Page and limit produce an offset that is too large",
+    path: ["page"],
+  });
 
 const postFieldsSchema = z.object({
   title: z.string().trim().min(1).max(255),
@@ -39,7 +59,7 @@ export const removePostCategorySchema = z
   })
   .strict();
 
-export type ListPostsQuery = PaginationQuery;
+export type ListPostsQuery = z.output<typeof listPostsQuerySchema>;
 export type CreatePostInput = z.output<typeof createPostSchema>;
 export type UpdatePostInput = z.output<typeof updatePostSchema>;
 export type AddPostCategoriesInput = z.output<typeof addPostCategoriesSchema>;

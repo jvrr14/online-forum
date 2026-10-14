@@ -1,4 +1,4 @@
-import { and, desc, eq, getColumns, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, exists, getColumns, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   categories,
@@ -11,10 +11,15 @@ import {
 } from "../../db/schema/index.js";
 import { ConflictError, InternalServerError, NotFoundError } from "../../lib/errors.js";
 import { postgresErrorCode } from "../../lib/database-errors.js";
+import type { PaginationQuery } from "../../lib/request.schemas.js";
 import type { CreatePostInput, ListPostsQuery, UpdatePostInput } from "./posts.schemas.js";
 
 export type PostAuthor = Pick<User, "id" | "username">;
 export type PostWithAuthor = Post & { author: PostAuthor };
+export type PostListResponse = {
+  data: PostWithAuthor[];
+  meta: { total: number; page: number; totalPages: number };
+};
 export type PostWithCategories = Post & { categories: Category[] };
 export type PostWithFullAuthor = Post & {
   author: PostAuthor & Pick<User, "email">;
@@ -34,14 +39,43 @@ async function updateOrThrow(id: number, values: Partial<Post>): Promise<Post> {
   return post;
 }
 
-export async function listPosts({ limit, offset }: ListPostsQuery): Promise<PostWithAuthor[]> {
-  return db
-    .select({ ...getColumns(posts), author: authorFields })
-    .from(posts)
-    .innerJoin(users, eq(posts.authorId, users.id))
-    .orderBy(...newestFirst)
-    .limit(limit)
-    .offset(offset);
+export async function listPosts({
+  search,
+  published,
+  category,
+  page,
+  limit,
+}: ListPostsQuery): Promise<PostListResponse> {
+  const where = and(
+    published !== undefined ? eq(posts.published, published) : undefined,
+    search ? or(ilike(posts.title, `%${search}%`), ilike(posts.content, `%${search}%`)) : undefined,
+    category
+      ? exists(
+          db
+            .select({ postId: postCategories.postId })
+            .from(postCategories)
+            .innerJoin(categories, eq(postCategories.categoryId, categories.id))
+            .where(and(eq(postCategories.postId, posts.id), eq(categories.name, category))),
+        )
+      : undefined,
+  );
+
+  const [data, total] = await Promise.all([
+    db
+      .select({ ...getColumns(posts), author: authorFields })
+      .from(posts)
+      .innerJoin(users, eq(posts.authorId, users.id))
+      .where(where)
+      .orderBy(...newestFirst)
+      .limit(limit)
+      .offset((page - 1) * limit),
+    db.$count(posts, where),
+  ]);
+
+  return {
+    data,
+    meta: { total, page, totalPages: Math.ceil(total / limit) },
+  };
 }
 
 export async function getPost(id: number): Promise<PostWithFullAuthor> {
@@ -64,7 +98,7 @@ export async function getPost(id: number): Promise<PostWithFullAuthor> {
 
 export async function listPostsByUser(
   authorId: number,
-  { limit, offset }: ListPostsQuery,
+  { limit, offset }: PaginationQuery,
 ): Promise<Post[]> {
   return db
     .select()

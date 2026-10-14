@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import type { Post, Profile } from "../../db/schema/index.js";
 import { validate } from "../../middleware/validate.js";
-import { listPostsQuerySchema, type ListPostsQuery } from "../posts/posts.schemas.js";
+import { paginationSchema, type PaginationQuery } from "../../lib/request.schemas.js";
 import { listPostsByUser } from "../posts/posts.service.js";
 import {
   createUserSchema,
@@ -36,8 +36,8 @@ usersRouter.get(
 usersRouter.get(
   "/:id/posts",
   validate(idParamsSchema, "params"),
-  validate(listPostsQuerySchema, "query"),
-  async (_req, res: Response<Post[], { params: UserIdParams; query: ListPostsQuery }>) => {
+  validate(paginationSchema, "query"),
+  async (_req, res: Response<Post[], { params: UserIdParams; query: PaginationQuery }>) => {
     res.json(await listPostsByUser(res.locals.params.id, res.locals.query));
   },
 );
