@@ -74,6 +74,30 @@ Run `npm run db:generate` after changing the schema to create a SQL migration.
 Review the generated SQL, then run `npm run db:migrate` to apply it to the database
 configured by `DATABASE_URL`. Generating a migration does not change the database.
 
+## Database seeding
+
+After configuring `.env` (see `.env.example`), run:
+
+```sh
+npm run db:migrate
+npm run db:seed
+```
+
+`src/db/seed.ts` uses the existing Drizzle client and environment validation,
+including the required `DATABASE_URL` and `JWT_SECRET`.
+It deletes all users and categories from the configured database, relying on
+foreign-key cascades to remove posts, profiles, and post/category links,
+then creates the book's sample data: the TypeScript
+category, the admin `jon` (`jon@example.com`), his "Full-stack developer" profile,
+and his published "Getting Started with TypeScript" post with 142 views linked
+to that category. Running it again replaces the data; generated IDs are not reset.
+
+Unlike the Prisma example's separate cleanup and creation steps, cleanup and all
+inserts share one transaction, so a failed seed restores the previous data.
+The script closes the database pool on success or failure and exits with a
+nonzero status on failure. Cleanup errors are logged separately so they do not
+hide a seeding error.
+
 The current API repositories still use temporary in-memory storage. Defining and
 migrating a table prepares persistence; querying it from the repositories is the
 next step.

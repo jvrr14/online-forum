@@ -37,7 +37,11 @@ export const transferPostsSchema = z
     fromAuthorId: z.number().int().positive().max(2_147_483_647),
     toAuthorId: z.number().int().positive().max(2_147_483_647),
   })
-  .strict();
+  .strict()
+  .refine((input) => input.fromAuthorId !== input.toAuthorId, {
+    message: "Source and destination must differ",
+    path: ["toAuthorId"],
+  });
 
 export const updatePostSchema = postFieldsSchema
   .extend({ published: z.boolean() })
