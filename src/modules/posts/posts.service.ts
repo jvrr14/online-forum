@@ -12,7 +12,12 @@ import {
 import { ConflictError, InternalServerError, NotFoundError } from "../../lib/errors.js";
 import { postgresErrorCode } from "../../lib/database-errors.js";
 import type { PaginationQuery } from "../../lib/request.schemas.js";
-import type { CreatePostInput, ListPostsQuery, UpdatePostInput } from "./posts.schemas.js";
+import type {
+  CreatePostInput,
+  ListPostsQuery,
+  TransferPostsInput,
+  UpdatePostInput,
+} from "./posts.schemas.js";
 
 export type PostAuthor = Pick<User, "id" | "username">;
 export type PostWithAuthor = Post & { author: PostAuthor };
@@ -24,6 +29,8 @@ export type PostWithCategories = Post & { categories: Category[] };
 export type PostWithFullAuthor = Post & {
   author: PostAuthor & Pick<User, "email">;
 };
+export type PublishAllPostsResult = { username: string; count: number };
+export type TransferPostsResult = { transferred: number; from: string; to: string };
 
 const authorFields = { id: users.id, username: users.username };
 
@@ -138,6 +145,50 @@ export async function createPost(input: CreatePostInput): Promise<PostWithAuthor
   }
 }
 
+export async function transferPosts({
+  fromAuthorId,
+  toAuthorId,
+}: TransferPostsInput): Promise<TransferPostsResult> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [fromUser] = await tx
+        .select({ username: users.username })
+        .from(users)
+        .where(eq(users.id, fromAuthorId))
+        .limit(1);
+      if (!fromUser) {
+        throw new NotFoundError("Source user not found", "USER_NOT_FOUND");
+      }
+
+      const [toUser] = await tx
+        .select({ username: users.username })
+        .from(users)
+        .where(eq(users.id, toAuthorId))
+        .limit(1);
+      if (!toUser) {
+        throw new NotFoundError("Destination user not found", "USER_NOT_FOUND");
+      }
+
+      const postCount = await tx.$count(posts, eq(posts.authorId, fromAuthorId));
+      if (postCount === 0) {
+        throw new ConflictError(
+          `${fromUser.username} has no posts to transfer`,
+          "NO_POSTS_TO_TRANSFER",
+        );
+      }
+
+      await tx.update(posts).set({ authorId: toAuthorId }).where(eq(posts.authorId, fromAuthorId));
+
+      return { transferred: postCount, from: fromUser.username, to: toUser.username };
+    });
+  } catch (error) {
+    if (postgresErrorCode(error) === "23503") {
+      throw new NotFoundError("Destination user not found", "USER_NOT_FOUND");
+    }
+    throw error;
+  }
+}
+
 export async function updatePost(id: number, input: UpdatePostInput): Promise<Post> {
   return updateOrThrow(id, {
     title: input.title,
@@ -148,6 +199,27 @@ export async function updatePost(id: number, input: UpdatePostInput): Promise<Po
 
 export async function publishPost(id: number): Promise<Post> {
   return updateOrThrow(id, { published: true });
+}
+
+export async function publishAllPostsByAuthor(authorId: number): Promise<PublishAllPostsResult> {
+  return db.transaction(async (tx) => {
+    const [author] = await tx
+      .select({ username: users.username })
+      .from(users)
+      .where(eq(users.id, authorId))
+      .limit(1);
+
+    if (!author) {
+      throw new NotFoundError("User not found", "USER_NOT_FOUND");
+    }
+
+    const result = await tx
+      .update(posts)
+      .set({ published: true })
+      .where(and(eq(posts.authorId, authorId), eq(posts.published, false)));
+
+    return { username: author.username, count: result.rowCount ?? 0 };
+  });
 }
 
 export async function incrementPostViews(id: number): Promise<Post> {

@@ -8,11 +8,13 @@ import {
   removePostCategorySchema,
   listPostsQuerySchema,
   updatePostSchema,
+  transferPostsSchema,
   type AddPostCategoriesInput,
   type RemovePostCategoryInput,
   type ListPostsQuery,
   type CreatePostInput,
   type UpdatePostInput,
+  type TransferPostsInput,
 } from "./posts.schemas.js";
 import * as postsService from "./posts.service.js";
 import type {
@@ -20,6 +22,7 @@ import type {
   PostWithAuthor,
   PostWithCategories,
   PostWithFullAuthor,
+  TransferPostsResult,
 } from "./posts.service.js";
 
 export const postsRouter = Router();
@@ -45,6 +48,14 @@ postsRouter.post(
   validate(createPostSchema, "body"),
   async (_req, res: Response<PostWithAuthor, { body: CreatePostInput }>) => {
     res.status(201).json(await postsService.createPost(res.locals.body));
+  },
+);
+
+postsRouter.post(
+  "/transfer",
+  validate(transferPostsSchema, "body"),
+  async (_req, res: Response<TransferPostsResult, { body: TransferPostsInput }>) => {
+    res.status(200).json(await postsService.transferPosts(res.locals.body));
   },
 );
 

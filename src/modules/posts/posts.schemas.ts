@@ -32,6 +32,13 @@ export const createPostSchema = postFieldsSchema.extend({
   authorId: z.number().int().positive().max(2_147_483_647),
 });
 
+export const transferPostsSchema = z
+  .object({
+    fromAuthorId: z.number().int().positive().max(2_147_483_647),
+    toAuthorId: z.number().int().positive().max(2_147_483_647),
+  })
+  .strict();
+
 export const updatePostSchema = postFieldsSchema
   .extend({ published: z.boolean() })
   .partial()
@@ -61,6 +68,7 @@ export const removePostCategorySchema = z
 
 export type ListPostsQuery = z.output<typeof listPostsQuerySchema>;
 export type CreatePostInput = z.output<typeof createPostSchema>;
+export type TransferPostsInput = z.output<typeof transferPostsSchema>;
 export type UpdatePostInput = z.output<typeof updatePostSchema>;
 export type AddPostCategoriesInput = z.output<typeof addPostCategoriesSchema>;
 export type RemovePostCategoryInput = z.output<typeof removePostCategorySchema>;
