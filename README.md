@@ -113,20 +113,30 @@ rotation, and expiry handling are not implemented.
 Run `npm run db:generate` after changing the schema to create a SQL migration.
 Review the generated SQL, then run `npm run db:migrate` to apply it to the database
 configured by `DATABASE_URL`. Generating a migration does not change the database.
-The migration adding `password_hash` requires an empty `users` table. For a
-populated database, revise it to add a nullable column, backfill each user's hash,
-and then enforce `NOT NULL` before applying it. No placeholder hash or default
-password is supplied.
+The migration adding `password_hash` first adds a nullable column, backfills
+existing users with the disabled-password marker `!password-reset-required`, and
+then enforces `NOT NULL`. Existing records are preserved, but those users need a
+real password hash set before password login can work. This is a migration
+backfill only: no database default or shared login password is added, and new
+users must still supply a hash. Authentication code must treat this marker as a
+disabled credential rather than passing it to a password verifier. Drizzle's
+migrator runs the statements in a transaction. If the earlier migration failed
+with a not-null violation, rerun `npm run db:migrate` after this correction.
 
 ## Database seeding
 
-After configuring `.env` (see `.env.example`), including `SEED_USER_PASSWORD_HASH`
-with an already-hashed password of 1–100 characters for the sample user, run:
+After configuring `.env` (see `.env.example`), run:
 
 ```sh
 npm run db:migrate
 npm run db:seed
 ```
+
+`SEED_USER_PASSWORD_HASH` is optional. If omitted, the sample user receives the
+disabled-password marker `!password-reset-required`. To supply a usable credential,
+set this variable to an already-hashed password of 1–100 characters before seeding.
+Empty or oversized values are rejected before any data is deleted, with the
+environment variable name included in the validation error.
 
 `src/db/seed.ts` uses the existing Drizzle client and environment validation,
 including the required `DATABASE_URL` and `JWT_SECRET`.

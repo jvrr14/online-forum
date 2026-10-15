@@ -4,7 +4,11 @@ import { categories, postCategories, posts, profiles, users } from "./schema/ind
 import { InternalServerError } from "../lib/errors.js";
 
 async function seedDatabase(): Promise<void> {
-  const passwordHash = z.string().min(1).max(100).parse(process.env.SEED_USER_PASSWORD_HASH);
+  const { SEED_USER_PASSWORD_HASH: passwordHash } = z
+    .object({
+      SEED_USER_PASSWORD_HASH: z.string().min(1).max(100).default("!password-reset-required"),
+    })
+    .parse(process.env);
 
   await db.transaction(async (tx) => {
     // Deleting users cascades to posts, profiles, refresh tokens, and post/category links.
