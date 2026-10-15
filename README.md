@@ -22,6 +22,16 @@ The Prisma `User` model is represented by the `users` table:
 - `username` is required and has a database limit of 100 characters.
 - `email` is required text with a unique constraint, so duplicate stored values
   are rejected. Email format validation belongs to the request validation layer.
+- Prisma's `password` maps to `passwordHash` (`password_hash`), a required
+  `varchar(100)` following this repo's credential naming convention. User creation
+  now requires an already-hashed `passwordHash`; hashing and authentication are
+  outside this structure-only port. User responses explicitly omit this field,
+  and the general user update endpoint does not accept credential changes.
+  Express also globally strips `passwordHash` and `password_hash` keys from JSON
+  responses, including nested objects and arrays, using its `json replacer`
+  setting in `src/app.ts`. Unlike Prisma's client-level `omit`, this safeguard
+  runs during response serialization; database queries still require explicit
+  public columns, and authentication queries can explicitly select the hash.
 - `role` is a required PostgreSQL enum (`USER`, `ADMIN`, `MODERATOR`) and defaults
   to `USER`, including for existing users when the migration is applied.
 - `createdAt` maps to `created_at` and defaults to the database's current time.
@@ -33,6 +43,20 @@ Both timestamps use millisecond precision and no time zone, matching the origina
 Prisma PostgreSQL `DateTime` fields. `.notNull()` preserves Prisma's required
 fields. `User` describes a selected row; `NewUser` describes an insert, where
 fields with defaults can be omitted.
+
+Public user selections live in `src/db/projections/users.ts`. Use
+`publicUserFields` for SQL selections and write results, and `publicUserColumns`
+for relational queries. Nested post authors use `postAuthorFields` or
+`postAuthorWithEmailFields` and their corresponding `Columns` exports for
+relational queries. These allowlists also define `PublicUser`, `PostAuthor`, and
+`PostAuthorWithEmail`, keeping response types in sync with selected fields. Adding
+a database column does not automatically expose it through these projections.
+
+`src/db/queries/user-credentials.ts` provides the separate internal
+`findUserCredentialsByEmail` lookup, selecting only the user ID and password hash.
+Its result is for credential verification and must never be returned by a route.
+API routes should pass response objects to `res.json()`; pre-serialized JSON
+strings bypass the global JSON filter.
 
 The Prisma `Post` model is represented by the `posts` table:
 
@@ -62,21 +86,42 @@ a category does not delete posts.
 
 Each table exports inferred select and insert types (for example, `Post` and
 `NewPost`); `Role` is inferred from the enum. The relations in
-`src/db/schema/relations.ts` expose `users.posts`, nullable `users.profile`,
+`src/db/relations.ts` expose `users.posts`, nullable `users.profile`,
 required `profiles.user` and `posts.author`, and the arrays `posts.categories`
 and `categories.posts` through Drizzle's relational query API. They are exported
-by the schema barrel and registered with the database client. Relation
+by the relations module and registered with the database client. Relation
 properties are query results, not additional database columns. The many-to-many
 relations use Drizzle's `through` mapping, following the
 [official relations documentation](https://orm.drizzle.team/docs/relations#many-to-many).
 
+The Prisma `RefreshToken` model is represented by `refresh_tokens`:
+
+- `id` uses the same generated integer primary key as `users`.
+- `token` is required text with a unique constraint.
+- `userId` maps to `user_id`, is required, and references `users.id` with cascade
+  deletion. Deleting a user also deletes their refresh tokens.
+- `expiresAt` maps to `expires_at` and is required; `createdAt` maps to
+  `created_at` and defaults to the database's current time. Both timestamps use
+  millisecond precision and no time zone, matching Prisma's PostgreSQL `DateTime`.
+- Separate indexes cover `user_id` and `expires_at`.
+
+The schema barrel exports `refreshTokens`, `RefreshToken`, and `NewRefreshToken`.
+The relations module exposes `users.refreshTokens` and required `refreshTokens.user`;
+these relations do not add columns. This is a structure-only port: token creation,
+rotation, and expiry handling are not implemented.
+
 Run `npm run db:generate` after changing the schema to create a SQL migration.
 Review the generated SQL, then run `npm run db:migrate` to apply it to the database
 configured by `DATABASE_URL`. Generating a migration does not change the database.
+The migration adding `password_hash` requires an empty `users` table. For a
+populated database, revise it to add a nullable column, backfill each user's hash,
+and then enforce `NOT NULL` before applying it. No placeholder hash or default
+password is supplied.
 
 ## Database seeding
 
-After configuring `.env` (see `.env.example`), run:
+After configuring `.env` (see `.env.example`), including `SEED_USER_PASSWORD_HASH`
+with an already-hashed password of 1–100 characters for the sample user, run:
 
 ```sh
 npm run db:migrate

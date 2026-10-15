@@ -1,10 +1,13 @@
+import { z } from "zod";
 import { closeDb, db } from "./client.js";
 import { categories, postCategories, posts, profiles, users } from "./schema/index.js";
 import { InternalServerError } from "../lib/errors.js";
 
 async function seedDatabase(): Promise<void> {
+  const passwordHash = z.string().min(1).max(100).parse(process.env.SEED_USER_PASSWORD_HASH);
+
   await db.transaction(async (tx) => {
-    // Deleting users cascades to posts, profiles, and post/category links.
+    // Deleting users cascades to posts, profiles, refresh tokens, and post/category links.
     await tx.delete(users);
     await tx.delete(categories);
 
@@ -18,7 +21,7 @@ async function seedDatabase(): Promise<void> {
 
     const [user] = await tx
       .insert(users)
-      .values({ username: "jon", email: "jon@example.com", role: "ADMIN" })
+      .values({ username: "jon", email: "jon@example.com", passwordHash, role: "ADMIN" })
       .returning({ id: users.id });
     if (!user) {
       throw new InternalServerError("Seed user creation returned no record");

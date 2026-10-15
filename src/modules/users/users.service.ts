@@ -1,6 +1,11 @@
 import { eq, getColumns, sql } from "drizzle-orm";
 import { db } from "../../db/client.js";
-import { posts, profiles, users, type Profile, type User } from "../../db/schema/index.js";
+import {
+  publicUserColumns,
+  publicUserFields,
+  type PublicUser,
+} from "../../db/projections/users.js";
+import { posts, profiles, users, type Profile } from "../../db/schema/index.js";
 import { postgresErrorCode } from "../../lib/database-errors.js";
 import {
   BadRequestError,
@@ -16,25 +21,7 @@ import type {
   UpsertProfileInput,
 } from "./users.schemas.js";
 
-const publicUserColumns = {
-  id: true,
-  username: true,
-  email: true,
-  role: true,
-  createdAt: true,
-  updatedAt: true,
-} as const;
-
-const userFields = {
-  id: users.id,
-  username: users.username,
-  email: users.email,
-  role: users.role,
-  createdAt: users.createdAt,
-  updatedAt: users.updatedAt,
-};
-
-export type UserResponse = Pick<User, keyof typeof publicUserColumns>;
+export type UserResponse = PublicUser;
 export type UserWithProfile = UserResponse & { profile: Profile | null };
 export type UserListResponse = UserWithProfile & { _count: { posts: number } };
 export type UserDetailResponse = UserWithProfile & { posts: PostWithCategories[] };
@@ -42,7 +29,7 @@ export type UserDetailResponse = UserWithProfile & { posts: PostWithCategories[]
 export async function listUsers({ limit, offset }: ListUsersQuery): Promise<UserListResponse[]> {
   return db
     .select({
-      ...userFields,
+      ...publicUserFields,
       profile: getColumns(profiles),
       _count: {
         posts:
@@ -82,9 +69,14 @@ export async function createUser(input: CreateUserInput): Promise<UserWithProfil
   return db.transaction(async (tx) => {
     const [user] = await tx
       .insert(users)
-      .values({ username: input.username, email: input.email, role: input.role })
+      .values({
+        username: input.username,
+        email: input.email,
+        passwordHash: input.passwordHash,
+        role: input.role,
+      })
       .onConflictDoNothing({ target: users.email })
-      .returning(userFields);
+      .returning(publicUserFields);
 
     if (!user) {
       throw new ConflictError("Email is already in use", "EMAIL_CONFLICT");
@@ -112,7 +104,7 @@ export async function updateUser(id: number, input: UpdateUserInput): Promise<Us
       .update(users)
       .set({ username: input.username, email: input.email, role: input.role })
       .where(eq(users.id, id))
-      .returning(userFields);
+      .returning(publicUserFields);
 
     if (!user) {
       throw new NotFoundError("User not found", "USER_NOT_FOUND");

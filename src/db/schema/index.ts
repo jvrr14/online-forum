@@ -1,5 +1,7 @@
 export { users, roleEnum } from "./user.schema.js";
 export type { User, NewUser, Role } from "./user.schema.js";
+export { refreshTokens } from "./refresh-token.schema.js";
+export type { RefreshToken, NewRefreshToken } from "./refresh-token.schema.js";
 export { posts } from "./post.schema.js";
 export type { Post, NewPost } from "./post.schema.js";
 export { profiles } from "./profile.schema.js";

@@ -1,13 +1,18 @@
 import { and, desc, eq, exists, getColumns, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
+  postAuthorFields,
+  postAuthorWithEmailFields,
+  type PostAuthor,
+  type PostAuthorWithEmail,
+} from "../../db/projections/users.js";
+import {
   categories,
   postCategories,
   posts,
   users,
   type Category,
   type Post,
-  type User,
 } from "../../db/schema/index.js";
 import { ConflictError, InternalServerError, NotFoundError } from "../../lib/errors.js";
 import { postgresErrorCode } from "../../lib/database-errors.js";
@@ -19,7 +24,7 @@ import type {
   UpdatePostInput,
 } from "./posts.schemas.js";
 
-export type PostAuthor = Pick<User, "id" | "username">;
+export type { PostAuthor } from "../../db/projections/users.js";
 export type PostWithAuthor = Post & { author: PostAuthor };
 export type PostListResponse = {
   data: PostWithAuthor[];
@@ -27,12 +32,10 @@ export type PostListResponse = {
 };
 export type PostWithCategories = Post & { categories: Category[] };
 export type PostWithFullAuthor = Post & {
-  author: PostAuthor & Pick<User, "email">;
+  author: PostAuthorWithEmail;
 };
 export type PublishAllPostsResult = { username: string; count: number };
 export type TransferPostsResult = { transferred: number; from: string; to: string };
-
-const authorFields = { id: users.id, username: users.username };
 
 const newestFirst = [desc(posts.createdAt), desc(posts.id)] as const;
 
@@ -69,7 +72,7 @@ export async function listPosts({
 
   const [data, total] = await Promise.all([
     db
-      .select({ ...getColumns(posts), author: authorFields })
+      .select({ ...getColumns(posts), author: postAuthorFields })
       .from(posts)
       .innerJoin(users, eq(posts.authorId, users.id))
       .where(where)
@@ -89,7 +92,7 @@ export async function getPost(id: number): Promise<PostWithFullAuthor> {
   const [post] = await db
     .select({
       ...getColumns(posts),
-      author: { ...authorFields, email: users.email },
+      author: postAuthorWithEmailFields,
     })
     .from(posts)
     .innerJoin(users, eq(posts.authorId, users.id))
@@ -126,7 +129,7 @@ export async function createPost(input: CreatePostInput): Promise<PostWithAuthor
 
       // The insert's foreign-key lock protects the author until this read finishes.
       const [author] = await tx
-        .select(authorFields)
+        .select(postAuthorFields)
         .from(users)
         .where(eq(users.id, input.authorId))
         .limit(1);

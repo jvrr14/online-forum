@@ -10,12 +10,13 @@ export {
 export const createUserSchema = z.object({
   username: z.string().trim().min(1).max(100),
   email: z.email(),
+  passwordHash: z.string().min(1).max(100),
   role: z.enum(roleEnum.enumValues).optional(),
   bio: z.string().optional(),
 });
 
 export const updateUserSchema = createUserSchema
-  .omit({ bio: true })
+  .omit({ bio: true, passwordHash: true })
   .partial()
   .strict()
   .refine(

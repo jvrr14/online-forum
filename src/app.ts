@@ -17,6 +17,10 @@ export function markShuttingDown(): void {
 }
 
 app.disable("x-powered-by");
+// Apply to nested objects and arrays in every JSON response as a final safeguard.
+app.set("json replacer", (key: string, value: unknown) =>
+  key === "passwordHash" || key === "password_hash" ? undefined : value,
+);
 app.use(
   pinoHttp({
     logger,
