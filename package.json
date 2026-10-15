@@ -19,6 +19,7 @@
     "fmt:check": "oxfmt --check"
   },
   "dependencies": {
+    "argon2": "^0.45.1",
     "close-with-grace": "^2.5.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.4",

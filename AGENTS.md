@@ -8,4 +8,5 @@
 - List endpoints are paginated with a capped limit.
 - Express 5: `req.query` is read-only; don't assign to it.
 - Multi-statement writes use `db.transaction`.
+- Do not add or run tests unless I explicitly request them. Keep the TypeScript check below.
 - After each change, run `tsc --noEmit` and report anything noticed but not changed.

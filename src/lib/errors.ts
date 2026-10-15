@@ -39,6 +39,13 @@ export class ConflictError extends AppError {
   }
 }
 
+export class UnauthorizedError extends AppError {
+  constructor(message = "Authentication required", code = "UNAUTHORIZED") {
+    super(401, code, message);
+    this.name = "UnauthorizedError";
+  }
+}
+
 export class BadRequestError extends AppError {
   constructor(
     message = "Invalid request",

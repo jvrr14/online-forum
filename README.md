@@ -24,8 +24,8 @@ The Prisma `User` model is represented by the `users` table:
   are rejected. Email format validation belongs to the request validation layer.
 - Prisma's `password` maps to `passwordHash` (`password_hash`), a required
   `varchar(100)` following this repo's credential naming convention. User creation
-  now requires an already-hashed `passwordHash`; hashing and authentication are
-  outside this structure-only port. User responses explicitly omit this field,
+  requires an already-hashed `passwordHash`; the registration service hashes
+  passwords separately. User responses explicitly omit this field,
   and the general user update endpoint does not accept credential changes.
   Express also globally strips `passwordHash` and `password_hash` keys from JSON
   responses, including nested objects and arrays, using its `json replacer`
@@ -107,8 +107,8 @@ The Prisma `RefreshToken` model is represented by `refresh_tokens`:
 
 The schema barrel exports `refreshTokens`, `RefreshToken`, and `NewRefreshToken`.
 The relations module exposes `users.refreshTokens` and required `refreshTokens.user`;
-these relations do not add columns. This is a structure-only port: token creation,
-rotation, and expiry handling are not implemented.
+these relations do not add columns. Registration and login create refresh-token records;
+refresh-token rotation and expiry enforcement are not implemented.
 
 Run `npm run db:generate` after changing the schema to create a SQL migration.
 Review the generated SQL, then run `npm run db:migrate` to apply it to the database
@@ -122,6 +122,54 @@ users must still supply a hash. Authentication code must treat this marker as a
 disabled credential rather than passing it to a password verifier. Drizzle's
 migrator runs the statements in a transaction. If the earlier migration failed
 with a not-null violation, rerun `npm run db:migrate` after this correction.
+
+## Authentication service
+
+`src/modules/auth/auth.service.ts` exports `registerUser` and `loginUser`. Their
+input types come from `auth.schemas.ts`; parse requests with `registerSchema` or
+`loginSchema` before calling the corresponding service. Registration trims usernames,
+validates email addresses, requires passwords of 8–128 characters without trimming
+them, and rejects unknown fields,
+including client-supplied roles. New users receive the database's default `USER` role.
+
+Registration hashes passwords with Argon2id before opening a transaction. The
+transaction creates the user, signs a 15-minute access token and a 7-day refresh
+token through `src/lib/jwt.ts`, and stores the refresh token with the JWT's exact
+expiration time. The response contains `{ user, accessToken, refreshToken }`;
+`user` selects only public columns. Duplicate emails produce `ConflictError`
+(`EMAIL_CONFLICT`, HTTP 409), and token signing or storage failures roll back the
+new user. These are deliberate improvements over the book's separate writes.
+
+Login accepts a valid email and a nonempty password of at most 128 characters,
+without trimming the password. It uses the internal credential lookup and verifies
+the password with Argon2. Missing users, disabled-password markers, and incorrect
+passwords produce the same `UnauthorizedError` (`INVALID_CREDENTIALS`, HTTP 401).
+Unexpected password-verification failures remain internal server errors.
+
+Verification happens before opening a transaction. Login then selects only public
+user columns and rechecks the password hash under a shared row lock, rejecting a
+user deleted or a password changed during verification. The lock prevents updates
+or deletion until the refresh-token record is stored. Registration and login share
+the token-signing and refresh-token persistence helper.
+
+`src/modules/auth/auth.routes.ts` exports the named `authRouter`, mounted at
+`/api/v1/auth` through the existing API router. It exposes:
+
+- `POST /api/v1/auth/register`: validates the body and returns HTTP 201.
+- `POST /api/v1/auth/login`: validates the body and returns HTTP 200.
+
+Both handlers read parsed input from `res.locals.body` and return only
+`{ user, accessToken }` with `Cache-Control: no-store`. The refresh token is set
+through `src/lib/cookies.ts` as a `refreshToken` cookie with `HttpOnly`,
+`SameSite=Strict`, `Secure` in production, and a path of `/api/v1/auth`. Its 7-day
+maximum age shares the refresh JWT's lifetime constant. The versioned route
+prefix follows this project's conventions rather than the book's `/api/auth`.
+
+The strict SameSite policy assumes the frontend and API are on the same site.
+The existing default CORS configuration does not enable credentialed cross-origin
+browser requests. A frontend on a different origin will need an explicit allowed
+origin, server-side CORS credentials, and client requests with credentials included.
+Token verification, refresh-token rotation, and logout are separate work.
 
 ## Database seeding
 
@@ -139,7 +187,7 @@ Empty or oversized values are rejected before any data is deleted, with the
 environment variable name included in the validation error.
 
 `src/db/seed.ts` uses the existing Drizzle client and environment validation,
-including the required `DATABASE_URL` and `JWT_SECRET`.
+including the required `DATABASE_URL`, `JWT_ACCESS_SECRET`, and `JWT_REFRESH_SECRET`.
 It deletes all users and categories from the configured database, relying on
 foreign-key cascades to remove posts, profiles, and post/category links,
 then creates the book's sample data: the TypeScript

@@ -7,6 +7,8 @@ const redactedPaths = [
   "res.headers.set-cookie",
   "DATABASE_URL",
   "JWT_SECRET",
+  "JWT_ACCESS_SECRET",
+  "JWT_REFRESH_SECRET",
 ];
 
 export const logger = pino({
