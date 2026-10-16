@@ -4,6 +4,7 @@ import { app, markShuttingDown } from "./app.js";
 import { env } from "./config/env.js";
 import { closeDb, pingDb } from "./db/client.js";
 import { flushLogger, logger } from "./lib/logger.js";
+import { startSessionCleanup } from "./jobs/session-cleanup.js";
 
 async function start(): Promise<void> {
   try {
@@ -25,6 +26,7 @@ async function start(): Promise<void> {
     return;
   }
 
+  const stopSessionCleanup = startSessionCleanup();
   const server = app.listen(env.PORT, () => {
     logger.info({ event: "server.started", port: env.PORT }, "HTTP server started");
   });
@@ -46,6 +48,9 @@ async function start(): Promise<void> {
 
       const errors: unknown[] = [];
 
+      // Stop scheduling work immediately, then wait before closing the database pool.
+      const cleanupStopped = stopSessionCleanup();
+
       if (server.listening) {
         try {
           await new Promise<void>((resolve, reject) => {
@@ -59,6 +64,8 @@ async function start(): Promise<void> {
           );
         }
       }
+
+      await cleanupStopped;
 
       try {
         await closeDb();

@@ -7,6 +7,7 @@ import {
 } from "../../db/projections/users.js";
 import { posts, profiles, users, type Profile } from "../../db/schema/index.js";
 import { postgresErrorCode } from "../../lib/database-errors.js";
+import { normalizeEmail } from "../../lib/email.js";
 import {
   BadRequestError,
   ConflictError,
@@ -18,6 +19,7 @@ import type {
   CreateUserInput,
   ListUsersQuery,
   UpdateUserInput,
+  UpdateOwnUserInput,
   UpsertProfileInput,
 } from "./users.schemas.js";
 
@@ -25,6 +27,24 @@ export type UserResponse = PublicUser;
 export type UserWithProfile = UserResponse & { profile: Profile | null };
 export type UserListResponse = UserWithProfile & { _count: { posts: number } };
 export type UserDetailResponse = UserWithProfile & { posts: PostWithCategories[] };
+
+export async function getUserProfile(id: number): Promise<UserWithProfile> {
+  const [user] = await db
+    .select({ ...publicUserFields, profile: getColumns(profiles) })
+    .from(users)
+    .leftJoin(profiles, eq(profiles.userId, users.id))
+    .where(eq(users.id, id))
+    .limit(1);
+  if (!user) {
+    throw new NotFoundError("User not found", "USER_NOT_FOUND");
+  }
+  return user;
+}
+
+export async function updateOwnUser(id: number, input: UpdateOwnUserInput): Promise<UserResponse> {
+  // Keep the self-service allowlist here as well as in request validation.
+  return updateUser(id, { username: input.username, email: input.email });
+}
 
 export async function listUsers({ limit, offset }: ListUsersQuery): Promise<UserListResponse[]> {
   return db
@@ -71,7 +91,7 @@ export async function createUser(input: CreateUserInput): Promise<UserWithProfil
       .insert(users)
       .values({
         username: input.username,
-        email: input.email,
+        email: normalizeEmail(input.email),
         passwordHash: input.passwordHash,
         role: input.role,
       })
@@ -102,7 +122,11 @@ export async function updateUser(id: number, input: UpdateUserInput): Promise<Us
   try {
     const [user] = await db
       .update(users)
-      .set({ username: input.username, email: input.email, role: input.role })
+      .set({
+        username: input.username,
+        email: input.email === undefined ? undefined : normalizeEmail(input.email),
+        role: input.role,
+      })
       .where(eq(users.id, id))
       .returning(publicUserFields);
 
@@ -113,7 +137,7 @@ export async function updateUser(id: number, input: UpdateUserInput): Promise<Us
     return user;
   } catch (error) {
     if (postgresErrorCode(error) === "23505") {
-      throw new ConflictError("Email is already in use", "EMAIL_CONFLICT");
+      throw new ConflictError("User conflicts with an existing account", "USER_CONFLICT");
     }
 
     throw error;

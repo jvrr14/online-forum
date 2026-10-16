@@ -16,6 +16,7 @@ import {
 } from "../../db/schema/index.js";
 import { ConflictError, InternalServerError, NotFoundError } from "../../lib/errors.js";
 import { postgresErrorCode } from "../../lib/database-errors.js";
+import { assertCanManageResource, type AuthenticatedUser } from "../../lib/auth.js";
 import type { PaginationQuery } from "../../lib/request.schemas.js";
 import type {
   CreatePostInput,
@@ -39,14 +40,39 @@ export type TransferPostsResult = { transferred: number; from: string; to: strin
 
 const newestFirst = [desc(posts.createdAt), desc(posts.id)] as const;
 
-async function updateOrThrow(id: number, values: Partial<Post>): Promise<Post> {
-  const [post] = await db.update(posts).set(values).where(eq(posts.id, id)).returning();
+type PostTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function lockPostForWrite(
+  tx: PostTransaction,
+  id: number,
+  actor: AuthenticatedUser,
+): Promise<void> {
+  const [post] = await tx
+    .select({ authorId: posts.authorId })
+    .from(posts)
+    .where(eq(posts.id, id))
+    .for("update");
 
   if (!post) {
     throw new NotFoundError("Post not found", "POST_NOT_FOUND");
   }
 
-  return post;
+  assertCanManageResource(actor, post.authorId);
+}
+
+async function updateOrThrow(
+  id: number,
+  values: Partial<Post>,
+  actor: AuthenticatedUser,
+): Promise<Post> {
+  return db.transaction(async (tx) => {
+    await lockPostForWrite(tx, id, actor);
+    const [post] = await tx.update(posts).set(values).where(eq(posts.id, id)).returning();
+    if (!post) {
+      throw new InternalServerError("Post update returned no record");
+    }
+    return post;
+  });
 }
 
 export async function listPosts({
@@ -119,19 +145,22 @@ export async function listPostsByUser(
     .offset(offset);
 }
 
-export async function createPost(input: CreatePostInput): Promise<PostWithAuthor> {
+export async function createPost(
+  input: CreatePostInput,
+  actor: AuthenticatedUser,
+): Promise<PostWithAuthor> {
   try {
     return await db.transaction(async (tx) => {
       const [post] = await tx
         .insert(posts)
-        .values({ title: input.title, content: input.content, authorId: input.authorId })
+        .values({ title: input.title, content: input.content, authorId: actor.id })
         .returning();
 
       // The insert's foreign-key lock protects the author until this read finishes.
       const [author] = await tx
         .select(postAuthorFields)
         .from(users)
-        .where(eq(users.id, input.authorId))
+        .where(eq(users.id, actor.id))
         .limit(1);
 
       if (!post || !author) {
@@ -192,19 +221,31 @@ export async function transferPosts({
   }
 }
 
-export async function updatePost(id: number, input: UpdatePostInput): Promise<Post> {
-  return updateOrThrow(id, {
-    title: input.title,
-    content: input.content,
-    published: input.published,
-  });
+export async function updatePost(
+  id: number,
+  input: UpdatePostInput,
+  actor: AuthenticatedUser,
+): Promise<Post> {
+  return updateOrThrow(
+    id,
+    {
+      title: input.title,
+      content: input.content,
+      published: input.published,
+    },
+    actor,
+  );
 }
 
-export async function publishPost(id: number): Promise<Post> {
-  return updateOrThrow(id, { published: true });
+export async function publishPost(id: number, actor: AuthenticatedUser): Promise<Post> {
+  return updateOrThrow(id, { published: true }, actor);
 }
 
-export async function publishAllPostsByAuthor(authorId: number): Promise<PublishAllPostsResult> {
+export async function publishAllPostsByAuthor(
+  authorId: number,
+  actor: AuthenticatedUser,
+): Promise<PublishAllPostsResult> {
+  assertCanManageResource(actor, authorId);
   return db.transaction(async (tx) => {
     const [author] = await tx
       .select({ username: users.username })
@@ -239,19 +280,20 @@ export async function incrementPostViews(id: number): Promise<Post> {
   return post;
 }
 
-export async function deletePost(id: number): Promise<void> {
-  const [post] = await db.delete(posts).where(eq(posts.id, id)).returning({ id: posts.id });
-
-  if (!post) {
-    throw new NotFoundError("Post not found", "POST_NOT_FOUND");
-  }
+export async function deletePost(id: number, actor: AuthenticatedUser): Promise<void> {
+  await db.transaction(async (tx) => {
+    await lockPostForWrite(tx, id, actor);
+    await tx.delete(posts).where(eq(posts.id, id));
+  });
 }
 
 export async function addPostCategories(
   id: number,
   categoryNames: string[],
+  actor: AuthenticatedUser,
 ): Promise<PostWithCategories> {
   return db.transaction(async (tx) => {
+    await lockPostForWrite(tx, id, actor);
     // Lock the post while changing its relations and refresh its update timestamp.
     const [post] = await tx
       .update(posts)
@@ -296,8 +338,10 @@ export async function addPostCategories(
 export async function removePostCategory(
   id: number,
   categoryName: string,
+  actor: AuthenticatedUser,
 ): Promise<PostWithCategories> {
   return db.transaction(async (tx) => {
+    await lockPostForWrite(tx, id, actor);
     const [post] = await tx
       .update(posts)
       .set({ updatedAt: new Date() })

@@ -1,6 +1,9 @@
 import { Router, type Response } from "express";
 import type { Post } from "../../db/schema/index.js";
 import { validate } from "../../middleware/validate.js";
+import { authenticate } from "../../middleware/authenticate.js";
+import { authorize } from "../../middleware/authorize.js";
+import { requireAuthenticatedUser } from "../../lib/auth.js";
 import { idParamsSchema, type IdParams as PostIdParams } from "../../lib/request.schemas.js";
 import {
   createPostSchema,
@@ -45,14 +48,19 @@ postsRouter.get(
 
 postsRouter.post(
   "/",
+  authenticate,
   validate(createPostSchema, "body"),
-  async (_req, res: Response<PostWithAuthor, { body: CreatePostInput }>) => {
-    res.status(201).json(await postsService.createPost(res.locals.body));
+  async (req, res: Response<PostWithAuthor, { body: CreatePostInput }>) => {
+    res
+      .status(201)
+      .json(await postsService.createPost(res.locals.body, requireAuthenticatedUser(req.user)));
   },
 );
 
 postsRouter.post(
   "/transfer",
+  authenticate,
+  authorize("ADMIN"),
   validate(transferPostsSchema, "body"),
   async (_req, res: Response<TransferPostsResult, { body: TransferPostsInput }>) => {
     res.status(200).json(await postsService.transferPosts(res.locals.body));
@@ -61,23 +69,38 @@ postsRouter.post(
 
 postsRouter.put(
   "/:id",
+  authenticate,
   validate(idParamsSchema, "params"),
   validate(updatePostSchema, "body"),
-  async (_req, res: Response<Post, { params: PostIdParams; body: UpdatePostInput }>) => {
-    res.status(200).json(await postsService.updatePost(res.locals.params.id, res.locals.body));
+  async (req, res: Response<Post, { params: PostIdParams; body: UpdatePostInput }>) => {
+    res
+      .status(200)
+      .json(
+        await postsService.updatePost(
+          res.locals.params.id,
+          res.locals.body,
+          requireAuthenticatedUser(req.user),
+        ),
+      );
   },
 );
 
 postsRouter.patch(
   "/:id/publish",
+  authenticate,
   validate(idParamsSchema, "params"),
-  async (_req, res: Response<Post, { params: PostIdParams }>) => {
-    res.status(200).json(await postsService.publishPost(res.locals.params.id));
+  async (req, res: Response<Post, { params: PostIdParams }>) => {
+    res
+      .status(200)
+      .json(
+        await postsService.publishPost(res.locals.params.id, requireAuthenticatedUser(req.user)),
+      );
   },
 );
 
 postsRouter.patch(
   "/:id/view",
+  authenticate,
   validate(idParamsSchema, "params"),
   async (_req, res: Response<Post, { params: PostIdParams }>) => {
     res.status(200).json(await postsService.incrementPostViews(res.locals.params.id));
@@ -86,41 +109,52 @@ postsRouter.patch(
 
 postsRouter.delete(
   "/:id",
+  authenticate,
   validate(idParamsSchema, "params"),
-  async (_req, res: Response<void, { params: PostIdParams }>) => {
-    await postsService.deletePost(res.locals.params.id);
+  async (req, res: Response<void, { params: PostIdParams }>) => {
+    await postsService.deletePost(res.locals.params.id, requireAuthenticatedUser(req.user));
     res.status(204).send();
   },
 );
 
 postsRouter.patch(
   "/:id/categories/add",
+  authenticate,
   validate(idParamsSchema, "params"),
   validate(addPostCategoriesSchema, "body"),
   async (
-    _req,
+    req,
     res: Response<PostWithCategories, { params: PostIdParams; body: AddPostCategoriesInput }>,
   ) => {
     res
       .status(200)
       .json(
-        await postsService.addPostCategories(res.locals.params.id, res.locals.body.categoryNames),
+        await postsService.addPostCategories(
+          res.locals.params.id,
+          res.locals.body.categoryNames,
+          requireAuthenticatedUser(req.user),
+        ),
       );
   },
 );
 
 postsRouter.patch(
   "/:id/categories/remove",
+  authenticate,
   validate(idParamsSchema, "params"),
   validate(removePostCategorySchema, "body"),
   async (
-    _req,
+    req,
     res: Response<PostWithCategories, { params: PostIdParams; body: RemovePostCategoryInput }>,
   ) => {
     res
       .status(200)
       .json(
-        await postsService.removePostCategory(res.locals.params.id, res.locals.body.categoryName),
+        await postsService.removePostCategory(
+          res.locals.params.id,
+          res.locals.body.categoryName,
+          requireAuthenticatedUser(req.user),
+        ),
       );
   },
 );

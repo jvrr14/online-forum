@@ -8,5 +8,16 @@
 - List endpoints are paginated with a capped limit.
 - Express 5: `req.query` is read-only; don't assign to it.
 - Multi-statement writes use `db.transaction`.
+- Authentication uses the validated JWT configuration and `Role` enum; validate incoming token signatures, algorithms, expiry, subjects, and roles rather than casting claims.
+- Login must perform one Argon2 verification for missing, disabled, and real accounts. Keep registration and dummy hash costs in the shared password helper; do not pass disabled-password markers to Argon2.
+- Normalize emails with the shared trim/lowercase helper in schemas, credential lookups, and user writes. Map ambiguous unique violations to a generic conflict; use an email-targeted insert conflict to identify duplicate emails without constraint names.
+- Run `authenticate` before `authorize` and request validation on protected routes. Use `requireAuthenticatedUser(req.user)` instead of non-null assertions; auth failures use AppError subclasses and the central error handler.
+- Derive post authors and self-service user IDs from the authenticated identity. Self-service schemas and services must allowlist fields and reject role/credential changes.
+- Enforce post ownership in services inside the write transaction, locking the post before checking its author. Owners, moderators, and admins can manage posts; account administration and post transfers require ADMIN.
+- Refresh rotation must atomically consume one unexpired stored token bound to the verified subject and insert its replacement. Coordinate all-session revocation with in-flight session creation using consistent user-row lock ordering.
+- Persist only SHA-256 refresh-token hashes in `tokenHash`; raw refresh tokens are transport-only. Token creation returns the token and its exact expiry together instead of decoding a newly signed JWT.
+- Expired-session cleanup uses bounded batches, skips locked rows, never overlaps within a worker, and stops before the database pool closes.
+- Keep refresh cookies HttpOnly, SameSite=Strict, Secure in production, and scoped to `/api/v1/auth`; share matching options when setting and clearing them. Auth responses use `Cache-Control: no-store` and never include refresh tokens in JSON.
+- Logout is idempotent; invalid/expired/revoked refresh tokens return 401 and clear the cookie. Unexpected infrastructure failures remain 500 and preserve the cookie for retry.
 - Do not add or run tests unless I explicitly request them. Keep the TypeScript check below.
 - After each change, run `tsc --noEmit` and report anything noticed but not changed.

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { roleEnum } from "../../db/schema/index.js";
+import { emailSchema } from "../../lib/email.js";
 import type { IdParams, PaginationQuery } from "../../lib/request.schemas.js";
 
 export {
@@ -9,7 +10,7 @@ export {
 
 export const createUserSchema = z.object({
   username: z.string().trim().min(1).max(100),
-  email: z.email(),
+  email: emailSchema,
   passwordHash: z.string().min(1).max(100),
   role: z.enum(roleEnum.enumValues).optional(),
   bio: z.string().optional(),
@@ -28,6 +29,15 @@ export const updateUserSchema = createUserSchema
     },
   );
 
+export const updateOwnUserSchema = createUserSchema
+  .pick({ username: true, email: true })
+  .partial()
+  .strict()
+  .refine((input) => input.username !== undefined || input.email !== undefined, {
+    message: "Provide a username or email to update",
+    path: ["username"],
+  });
+
 export const upsertProfileSchema = z
   .object({
     bio: z.string().optional(),
@@ -43,4 +53,5 @@ export type UserIdParams = IdParams;
 export type ListUsersQuery = PaginationQuery;
 export type CreateUserInput = z.output<typeof createUserSchema>;
 export type UpdateUserInput = z.output<typeof updateUserSchema>;
+export type UpdateOwnUserInput = z.output<typeof updateOwnUserSchema>;
 export type UpsertProfileInput = z.output<typeof upsertProfileSchema>;

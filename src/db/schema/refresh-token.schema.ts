@@ -5,7 +5,7 @@ export const refreshTokens = pgTable(
   "refresh_tokens",
   {
     id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
-    token: text("token").notNull().unique(),
+    tokenHash: text("token_hash").notNull().unique(),
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),

@@ -28,9 +28,7 @@ const postFieldsSchema = z.object({
   content: z.string().nullable().optional(),
 });
 
-export const createPostSchema = postFieldsSchema.extend({
-  authorId: z.number().int().positive().max(2_147_483_647),
-});
+export const createPostSchema = postFieldsSchema.strict();
 
 export const transferPostsSchema = z
   .object({

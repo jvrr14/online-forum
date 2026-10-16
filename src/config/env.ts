@@ -2,16 +2,29 @@ import "dotenv/config";
 import { z } from "zod";
 import pino from "pino";
 
-const envSchema = z.object({
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  JWT_ACCESS_SECRET: z.string().min(32, "JWT_ACCESS_SECRET must be at least 32 characters"),
-  JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 characters"),
-  PORT: z.coerce.number().int().positive().max(65_535).default(3000),
-  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  SERVICE_NAME: z.string().min(1).default("online-forum-api"),
-  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
-});
+const envSchema = z
+  .object({
+    DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+    JWT_ACCESS_SECRET: z.string().min(32, "JWT_ACCESS_SECRET must be at least 32 characters"),
+    JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 characters"),
+    PORT: z.coerce.number().int().positive().max(65_535).default(3000),
+    NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+    LOG_LEVEL: z
+      .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
+      .default("info"),
+    SERVICE_NAME: z.string().min(1).default("online-forum-api"),
+    SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+    SESSION_CLEANUP_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(2_147_483_647)
+      .default(3_600_000),
+  })
+  .refine((value) => value.JWT_ACCESS_SECRET !== value.JWT_REFRESH_SECRET, {
+    message: "Access and refresh secrets must be different",
+    path: ["JWT_REFRESH_SECRET"],
+  });
 
 const result = envSchema.safeParse(process.env);
 
