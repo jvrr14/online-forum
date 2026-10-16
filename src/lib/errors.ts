@@ -64,6 +64,13 @@ export class BadRequestError extends AppError {
   }
 }
 
+export class TooManyRequestsError extends AppError {
+  constructor(message = "Too many requests, please try again later", code = "TOO_MANY_REQUESTS") {
+    super(429, code, message);
+    this.name = "TooManyRequestsError";
+  }
+}
+
 export class InternalServerError extends AppError {
   constructor(message = "An unexpected error occurred", options: AppErrorOptions = {}) {
     super(500, "INTERNAL_ERROR", message, options);
