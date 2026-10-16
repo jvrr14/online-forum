@@ -1,10 +1,19 @@
 # online-forum
 
+## Project layout
+
+- `src/` – application code: `modules/` (routes, schemas, services per feature),
+  `db/` (schema, relations, projections, seed), `lib/`, `middleware/`, `jobs/`, `config/`.
+- `drizzle/` – generated SQL migrations and snapshots.
+- `dist/` – build output (`npm run build`, git-ignored).
+
+The repository has no test suite or placeholder test/data directories.
+
 ## Database schemas
 
 This project uses Drizzle ORM with PostgreSQL. Table definitions live in
-`src/db/schema/`. Each table gets its own schema module, following
-the project's focused modules such as `user.repository.ts`.
+`src/db/schema/`. Each table gets its own schema module (for example
+`user.schema.ts`), mirroring the focused modules used elsewhere in the project.
 
 `src/db/schema/index.ts` is a barrel file: it re-exports tables and their inferred
 types from the individual modules. This gives consumers a single schema entry
