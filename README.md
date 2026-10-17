@@ -213,9 +213,9 @@ maximum age shares the refresh JWT's lifetime constant. The versioned route
 prefix follows this project's conventions rather than the book's `/api/auth`.
 
 The strict SameSite policy assumes the frontend and API are on the same site.
-The existing default CORS configuration does not enable credentialed cross-origin
-browser requests. A frontend on a different origin will need an explicit allowed
-origin, server-side CORS credentials, and client requests with credentials included.
+CORS allows credentialed cross-origin browser requests from `http://localhost:5173`.
+Frontend requests must include credentials (for example, `credentials: "include"`
+with `fetch`) to send and receive refresh cookies.
 
 Access and refresh secrets must be distinct; environment validation rejects equal
 values. JWT verification pins HS256 and requires a JWT header type plus `sub`,

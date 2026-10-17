@@ -67,7 +67,12 @@ app.use("/api/v1/auth", (_req, res, next) => {
   res.set("Cache-Control", "no-store");
   next();
 });
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  }),
+);
 
 // Health probes do not need body parsing or consume API quotas.
 app.get(["/health", "/health/live"], (_req, res) => {
